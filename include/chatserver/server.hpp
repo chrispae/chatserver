@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <thread>
+
 class Server
 {
 public:
@@ -41,43 +43,51 @@ public:
         while (true)
         {
             int connection_fd = accept(server_fd, (sockaddr *)&addr, &addrlen);
-            if (connection_fd < 0)
+
+            auto handle_connection = [&]()
             {
-                std::cerr << "Error on accept" << std::endl;
-                continue;
-            }
-
-            inet_ntop(AF_INET, (const void *)&(addr.sin_addr.s_addr), readable_ip_buf, sizeof(readable_ip_buf));
-            std::cout << "Accepted connection from " << readable_ip_buf << std::endl;
-
-            char recvbuffer[512];
-            char sendbuffer[512];
-
-            while (true)
-            {
-                // call of read is blocking until data is available
-                int n = read(connection_fd, recvbuffer, sizeof(recvbuffer) - 1);
-                if (n < 0)
+                if (connection_fd < 0)
                 {
-                    std::cerr << "Error reading from socket" << std::endl;
-                    close(connection_fd);
-                    break;
+                    std::cerr << "Error on accept" << std::endl;
+                    return;
                 }
 
-                if (n == 0)
+                inet_ntop(AF_INET, (const void *)&(addr.sin_addr.s_addr), readable_ip_buf, sizeof(readable_ip_buf));
+                std::cout << "Accepted connection from " << readable_ip_buf << std::endl;
+
+                char recvbuffer[512];
+                char sendbuffer[512];
+
+
+                while (true)
                 {
-                    std::cout << "Client disconnected" << std::endl;
-                    close(connection_fd);
-                    break;
+                    // call of read is blocking until data is available
+                    int n = read(connection_fd, recvbuffer, sizeof(recvbuffer) - 1);
+                    if (n < 0)
+                    {
+                        std::cerr << "Error reading from socket" << std::endl;
+                        close(connection_fd);
+                        break;
+                    }
+
+                    if (n == 0)
+                    {
+                        std::cout << "Client disconnected" << std::endl;
+                        close(connection_fd);
+                        break;
+                    }
+
+                    std::cout << "Received message: " << ": " << std::string(recvbuffer, n) << std::endl;
+
+                    std::memcpy(sendbuffer, recvbuffer, n);
+                    sendbuffer[n] = '\0';
+
+                    int m = write(connection_fd, sendbuffer, strlen(sendbuffer));
                 }
+            };
 
-                std::cout << "Received message: " << ": " << std::string(recvbuffer, n) << std::endl;
-
-                std::memcpy(sendbuffer, recvbuffer, n);
-                sendbuffer[n] = '\0';
-
-                int m = write(connection_fd, sendbuffer, strlen(sendbuffer));
-            }
+            std::thread connection_thread(handle_connection);
+            connection_thread.detach(); // detach the thread to allow it to run independently
         }
     }
 
